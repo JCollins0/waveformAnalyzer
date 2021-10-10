@@ -1,0 +1,11 @@
+name: waveform
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+- matplotlib
+- numpy
+- keyboard
+- tk
+- pandas
+- pyinstaller
