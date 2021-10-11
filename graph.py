@@ -23,50 +23,79 @@ def remove_number_format(string,convert_type="float",return_as="number"):
         return int(string.replace(',',''))
     return float(string.replace(',',''))
 
-def get_multipler(time_units):
+def get_multiplier(time_units, convert_to_units="ns"):
     tu = time_units.lower()
+    cu = convert_to_units.lower()
     if tu == 's':
-        return 1e+9
+        if cu == 's':
+            return 1e9
+        if cu == 'μs':
+            return 1e6
+        if cu == 'ms':
+            return 1e3
+        if cu == 's':
+            return 1
     if tu == 'ms':
-        return 1e+6
+        if cu == 'ns':
+            return 1e6
+        if cu == 'μs':
+            return 1e3
+        if cu == 'ms':
+            return 1
+        if cu == 's':
+            return 1e-3
+    if tu == 'μs':
+        if cu == 'ns':
+            return 1e3
+        if cu == 'μs':
+            return 1
+        if cu == 'ms':
+            return 1e-3
+        if cu == 's':
+            return 1e-6
     if tu == 'ns':
-        return 1
-    if tu == 'm':
-        return 6e+10
-    if tu == 'h':
-        return 3.6e+12
+        if cu == 'ns':
+            return 1
+        if cu == 'μs':
+            return 1e-3
+        if cu == 'ms':
+            return 1e-6
+        if cu == 's':
+            return 1e-9
 
 REGEX_PATTERN='([\d|\.]+|[A-Za-z]+)'
-def convert_time_to_col(time, time_per_col="16ns"):
+def convert_time_to_col(time, time_units, time_per_col="16ns"):
+
     units_time_val,units_time_units = re.findall(REGEX_PATTERN, time_per_col)
     units_time_val = float(units_time_val)
     # goal to convert everything to nanoseconds
-    multipler = get_multipler(units_time_units)
-    units_time_val *= multipler
+    multiplier = get_multiplier(units_time_units)
+    units_time_val *= multiplier
 
-    time_val, time_units = re.findall(REGEX_PATTERN, time)
-    time_val = float(time_val)
-    multipler = get_multipler(time_units)
-    time_val *= multipler
+    time_val = float(time)
+    multiplier = get_multiplier(time_units)
+    time_val *= multiplier
 
     return int(time_val / units_time_val)
 
-def convert_col_to_time(column, time_per_col="16ns"):
+def convert_col_to_time(column, time_per_col="16ns",time_units="ns"):
+    if column is None:
+        column = 0
     units_time_val,units_time_units = re.findall(REGEX_PATTERN, time_per_col)
     units_time_val = float(units_time_val)
-
-    return f"{round(column * units_time_val, 2)}ns"
+    multiplier = get_multiplier(units_time_units, time_units)
+    return f"{round(column * units_time_val * multiplier, 2)}{time_units}"
 
 def get_time(time_from_user_input,entered_units,total_time):
     end_time = time_from_user_input
     if end_time == "":
         end_time = total_time
-        return f"{end_time}ns"
+        return str(end_time), "ns"
     else:
         end_time = min(float(end_time), total_time)
-        return f"{end_time}{entered_units}"
+        return str(end_time), str(entered_units)
 
-    return f"0ns" # should never get here
+    return "0", "ns" # should never get here
 
 
 def on_graph_close(_):
@@ -74,7 +103,7 @@ def on_graph_close(_):
     graphing_open = False
 
 OFFSET = lambda columns : 10 ** int(math.log(columns,10)-1)  # for viewing plot easier
-def plot_graph(row_number,num_rows,max_y_value,min_x_value,max_x_value,auto_scale=False):
+def plot_graph(row_number,num_rows,max_y_value,min_x_value,max_x_value,auto_scale=False,time_units="ns"):
     global df
     plt.clf()
     row = df.iloc[row_number][min_x_value : max_x_value]
@@ -82,12 +111,12 @@ def plot_graph(row_number,num_rows,max_y_value,min_x_value,max_x_value,auto_scal
     figure = plt.gcf()
     figure.canvas.mpl_connect('close_event', on_graph_close)
 
-    hovered_time="0ns"
+    hovered_time=0
 
     # closures require we pass this time otherwise it will always be 0ns
     def update_plot_title(hovered_time):
         plt.title(label=f"Showing row {row_number} of {num_rows-1} from {file_name_entry.split('/')[-1]}"+
-                f"\nViewing time {convert_col_to_time(min_x_value)} to {convert_col_to_time(max_x_value)} - Hovered Over t={hovered_time}" +
+                f"\nViewing time {convert_col_to_time(min_x_value,time_units=time_units)} to {convert_col_to_time(max_x_value,time_units=time_units)} - Hovered Over t={convert_col_to_time(hovered_time,time_units=time_units)}" +
                 f"\n(comma) - go back a frame (period) - go forward a frame\n(space) - toggle auto progress | currently: {'on' if auto_progress else 'off'}")
 
     def on_plot_hover(event):
@@ -95,7 +124,7 @@ def plot_graph(row_number,num_rows,max_y_value,min_x_value,max_x_value,auto_scal
         for curve in myplot.get_lines():
             # Searching which data member corresponds to current mouse position
             if curve.contains(event)[0]:
-                hovered_time=convert_col_to_time(event.xdata)
+                hovered_time=event.xdata
                 update_plot_title(hovered_time)
 
     figure.canvas.mpl_connect('motion_notify_event', on_plot_hover)
@@ -161,14 +190,14 @@ def graphing_loop(_):
         CONSTANTS={
             'FILE_NAME':file_name_entry,
             'AUTO_SCALE':auto_scale_checked_var.get() == 1,
-            'MAX_Y_VALUE': remove_number_format(y_value_entry.get() if y_value_entry.get() != "" else "0"),
+            'MAX_Y_VALUE': remove_number_format(y_value_entry.get() if y_value_entry.get() != "" else "1"),
             'ROW_START' : remove_number_format(row_start_entry.get() if row_start_entry.get() != "" else "0", convert_type="int"),
             'SLEEP_SECONDS':.5,
             'AUTO_PROGRESS' : auto_progress_checked_var.get() == 1,
             'AUTO_SLEEP_SECONDS':max( remove_number_format( auto_progress_time_entry.get() if auto_progress_time_entry.get() != "" else ".1"),.1),
             'START_TIME' : remove_number_format(col_start_entry.get(),return_as="string"),
             'END_TIME' : remove_number_format(col_end_entry.get(),return_as="string"),
-            'TIME_UNITS': "ns" if units_var.get() == 1 else ("ms" if units_var.get() == 2 else "s"),
+            'TIME_UNITS': "ns" if units_var.get() == 1 else ("μs" if units_var.get() == 2 else "ms"),
         }
     except Exception as e:
         with open('log.txt','w') as log:
@@ -189,9 +218,9 @@ def graphing_loop(_):
     total_time = time_per_column * num_cols
 
     CONSTANTS['START_TIME_FORMATTED'] = get_time(CONSTANTS['START_TIME'], CONSTANTS['TIME_UNITS'],total_time)
-    CONSTANTS['XLIM_START'] = convert_time_to_col(CONSTANTS['START_TIME_FORMATTED'],time_per_col=time_per_column_string)
+    CONSTANTS['XLIM_START'] = convert_time_to_col(CONSTANTS['START_TIME_FORMATTED'][0], CONSTANTS['START_TIME_FORMATTED'][1],time_per_col=time_per_column_string)
     CONSTANTS['END_TIME_FORMATTED'] = get_time(CONSTANTS['END_TIME'], CONSTANTS['TIME_UNITS'],total_time)
-    CONSTANTS['XLIM_END'] = convert_time_to_col(CONSTANTS['END_TIME_FORMATTED'],time_per_col=time_per_column_string)
+    CONSTANTS['XLIM_END'] = convert_time_to_col(CONSTANTS['END_TIME_FORMATTED'][0],CONSTANTS['END_TIME_FORMATTED'][1],time_per_col=time_per_column_string)
 
     current_row=min(CONSTANTS['ROW_START'],num_rows-1)
     plt.ion()
@@ -202,7 +231,8 @@ def graphing_loop(_):
                max_y_value=CONSTANTS['MAX_Y_VALUE'],
                min_x_value=CONSTANTS['XLIM_START'],
                max_x_value=CONSTANTS['XLIM_END'],
-               auto_scale=CONSTANTS['AUTO_SCALE'])
+               auto_scale=CONSTANTS['AUTO_SCALE'],
+               time_units=CONSTANTS['TIME_UNITS'])
 
     while current_row < num_rows and window_open and graphing_open:
         if not already_drew_row == current_row:
@@ -211,7 +241,8 @@ def graphing_loop(_):
                        max_y_value=CONSTANTS['MAX_Y_VALUE'],
                        min_x_value=CONSTANTS['XLIM_START'],
                        max_x_value=CONSTANTS['XLIM_END'],
-                       auto_scale=CONSTANTS['AUTO_SCALE'])
+                       auto_scale=CONSTANTS['AUTO_SCALE'],
+                       time_units=CONSTANTS['TIME_UNITS'])
 
         already_drew_row = current_row
 
@@ -273,8 +304,8 @@ col_end_entry.grid(row=0,column=2)
 
 units_var = tk.IntVar(value=1)
 tk.Radiobutton(frame2,text="ns",width=2,variable=units_var,value=1).grid(row=1,column=0)
-tk.Radiobutton(frame2,text="ms",width=2,variable=units_var,value=2).grid(row=1,column=1)
-tk.Radiobutton(frame2,text="s",width=2,variable=units_var,value=3).grid(row=1,column=2)
+tk.Radiobutton(frame2,text="μs",width=2,variable=units_var,value=2).grid(row=1,column=1)
+tk.Radiobutton(frame2,text="ms",width=2,variable=units_var,value=3).grid(row=1,column=2)
 
 
 # col_end_entry.pack()
