@@ -78,7 +78,7 @@ def convert_time_to_col(time, time_units, time_per_col="16ns"):
 
     return int(time_val / units_time_val)
 
-def convert_col_to_time(column, time_per_col="16ns",time_units="ns"):
+def convert_col_to_time(column, time_per_col,time_units="ns"):
     if column is None:
         column = 0
     units_time_val,units_time_units = re.findall(REGEX_PATTERN, time_per_col)
@@ -103,7 +103,7 @@ def on_graph_close(_):
     graphing_open = False
 
 OFFSET = lambda columns : 10 ** int(math.log(columns,10)-1)  # for viewing plot easier
-def plot_graph(row_number,num_rows,max_y_value,min_x_value,max_x_value,auto_scale=False,time_units="ns"):
+def plot_graph(row_number,num_rows,max_y_value,min_x_value,max_x_value,time_per_col,auto_scale=False,time_units="ns"):
     global df
     plt.clf()
     row = df.iloc[row_number][min_x_value : max_x_value]
@@ -116,7 +116,7 @@ def plot_graph(row_number,num_rows,max_y_value,min_x_value,max_x_value,auto_scal
     # closures require we pass this time otherwise it will always be 0ns
     def update_plot_title(hovered_time):
         plt.title(label=f"Showing row {row_number} of {num_rows-1} from {file_name_entry.split('/')[-1]}"+
-                f"\nViewing time {convert_col_to_time(min_x_value,time_units=time_units)} to {convert_col_to_time(max_x_value,time_units=time_units)} - Hovered Over t={convert_col_to_time(hovered_time,time_units=time_units)}" +
+                f"\nViewing time {convert_col_to_time(min_x_value,time_per_col=time_per_col,time_units=time_units)} to {convert_col_to_time(max_x_value,time_per_col=time_per_col,time_units=time_units)} - Hovered Over t={convert_col_to_time(hovered_time,time_per_col=time_per_col,time_units=time_units)}" +
                 f"\n(comma) - go back a frame (period) - go forward a frame\n(space) - toggle auto progress | currently: {'on' if auto_progress else 'off'}")
 
     def on_plot_hover(event):
@@ -173,8 +173,7 @@ keyboard.on_press_key(",", on_prev)
 keyboard.on_press_key(".", on_next)
 keyboard.on_press_key(" ", on_pause)
 
-time_per_column = 16.1 ## nano seconds (ns)
-time_per_column_string = f"{time_per_column}ns"
+
 
 def graphing_loop(_):
     global graphing_open
@@ -189,6 +188,7 @@ def graphing_loop(_):
     try:
         CONSTANTS={
             'FILE_NAME':file_name_entry,
+            'TIME_PER_COL': remove_number_format(time_per_col_entry.get() if time_per_col_entry.get() != "" else "166.0", return_as="float"),
             'AUTO_SCALE':auto_scale_checked_var.get() == 1,
             'MAX_Y_VALUE': remove_number_format(y_value_entry.get() if y_value_entry.get() != "" else "1"),
             'ROW_START' : remove_number_format(row_start_entry.get() if row_start_entry.get() != "" else "0", convert_type="int"),
@@ -207,6 +207,9 @@ def graphing_loop(_):
     window_open = True
     graphing_open = True
     auto_progress = CONSTANTS['AUTO_PROGRESS']
+
+    time_per_column = CONSTANTS['TIME_PER_COL'] ## nano seconds (ns)
+    time_per_column_string = f"{time_per_column}ns"
 
     plt.close("all")
 
@@ -232,6 +235,7 @@ def graphing_loop(_):
                min_x_value=CONSTANTS['XLIM_START'],
                max_x_value=CONSTANTS['XLIM_END'],
                auto_scale=CONSTANTS['AUTO_SCALE'],
+               time_per_col=time_per_column_string,
                time_units=CONSTANTS['TIME_UNITS'])
 
     while current_row < num_rows and window_open and graphing_open:
@@ -242,6 +246,7 @@ def graphing_loop(_):
                        min_x_value=CONSTANTS['XLIM_START'],
                        max_x_value=CONSTANTS['XLIM_END'],
                        auto_scale=CONSTANTS['AUTO_SCALE'],
+                       time_per_col=time_per_column_string,
                        time_units=CONSTANTS['TIME_UNITS'])
 
         already_drew_row = current_row
@@ -271,6 +276,11 @@ file_button = tk.Button(frame,text="Open File")
 file_button.bind("<Button-1>", set_file_name)
 file_button.pack()
 
+
+tk.Label(frame,text="Enter time between columns in nano seconds").pack()
+time_per_col_entry = tk.Entry(frame,fg="black", bg="white", width=50, textvariable=tk.StringVar(value="166.0"))
+time_per_col_entry.pack()
+
 tk.Label(frame, text="Do you want to auto scale the Y-axis? ").pack()
 auto_scale_checked_var = tk.IntVar()
 auto_scale_checkbutton = tk.Checkbutton(frame, text="Auto Scale",variable=auto_scale_checked_var)
@@ -294,7 +304,7 @@ auto_progress_time_entry = tk.Entry(frame,fg="black", bg="white", width=50,textv
 auto_progress_time_entry.pack()
 
 frame2 = tk.Frame(frame)
-tk.Label(frame, text=f"Enter start and end time (time per column is: {time_per_column_string}) ").pack()
+tk.Label(frame, text=f"Enter start and end time").pack()
 col_start_entry = tk.Entry(frame2, fg="black", bg="white", width=20,textvariable=tk.StringVar(value="0"))
 col_start_entry.grid(row=0,column=0)
 # col_start_entry.pack()
